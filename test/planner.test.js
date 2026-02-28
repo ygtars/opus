@@ -1,6 +1,11 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { inferSkill, splitRequirementToTasks, planSchedule } = require('../src/services/planner');
+const {
+  inferSkill,
+  splitRequirementToTasks,
+  planSchedule,
+  mapDayIndexToDate
+} = require('../src/services/planner');
 
 test('inferSkill should detect common keywords', () => {
   assert.equal(inferSkill('Backend auth API'), 'nodejs');
@@ -62,4 +67,22 @@ test('planSchedule should continue scheduling on following day when backlog grow
   assert.equal(planned[0].dayIndex, 1);
   assert.equal(planned[1].dayIndex, 1);
   assert.equal(planned[2].dayIndex, 2);
+});
+
+test('mapDayIndexToDate should skip weekends when enabled', () => {
+  // 2026-03-06 is Friday
+  assert.equal(mapDayIndexToDate(1, '2026-03-06', true), '2026-03-06');
+  assert.equal(mapDayIndexToDate(2, '2026-03-06', true), '2026-03-09');
+});
+
+test('planSchedule should include dayDate with weekend skipping', () => {
+  const tasks = [
+    { title: 'A', requiredSkill: 'nodejs', estimateHours: 8 },
+    { title: 'B', requiredSkill: 'nodejs', estimateHours: 8 }
+  ];
+  const members = [{ id: 1, capacityHoursPerDay: 8, skills: [{ name: 'nodejs' }] }];
+
+  const planned = planSchedule(tasks, members, 1, { startDate: '2026-03-06', skipWeekends: true });
+  assert.equal(planned[0].dayDate, '2026-03-06');
+  assert.equal(planned[1].dayDate, '2026-03-09');
 });

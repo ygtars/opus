@@ -11,12 +11,21 @@ async function connectDb() {
   });
 }
 
+async function ensureColumn(db, table, column, ddlType) {
+  const cols = await db.all(`PRAGMA table_info(${table})`);
+  const hasColumn = cols.some((c) => c.name === column);
+  if (!hasColumn) {
+    await db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddlType}`);
+  }
+}
+
 async function initSchema(db) {
   await db.exec(`
     PRAGMA foreign_keys = ON;
 
     CREATE TABLE IF NOT EXISTS projects (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      organization_id INTEGER,
       name TEXT NOT NULL,
       description TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
@@ -24,6 +33,7 @@ async function initSchema(db) {
 
     CREATE TABLE IF NOT EXISTS members (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      organization_id INTEGER,
       full_name TEXT NOT NULL,
       role TEXT,
       capacity_hours_per_day INTEGER DEFAULT 6,
@@ -53,6 +63,7 @@ async function initSchema(db) {
       required_skill TEXT,
       estimate_hours INTEGER DEFAULT 4,
       day_index INTEGER,
+      day_date TEXT,
       status TEXT DEFAULT 'todo',
       assigned_member_id INTEGER,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -67,7 +78,17 @@ async function initSchema(db) {
       FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
       FOREIGN KEY (blocked_by_task_id) REFERENCES tasks(id) ON DELETE CASCADE
     );
+
+    CREATE TABLE IF NOT EXISTS organizations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
   `);
+
+  await ensureColumn(db, 'projects', 'organization_id', 'INTEGER');
+  await ensureColumn(db, 'members', 'organization_id', 'INTEGER');
+  await ensureColumn(db, 'tasks', 'day_date', 'TEXT');
 }
 
 module.exports = {

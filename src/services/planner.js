@@ -48,7 +48,30 @@ function estimateDayIndex(totalAssignedHours, capacityHoursPerDay, startDay) {
   return startDay + dayOffset;
 }
 
-function planSchedule(tasks, members, startDay = 1) {
+function mapDayIndexToDate(dayIndex, startDate, skipWeekends) {
+  if (!startDate) return null;
+
+  const current = new Date(startDate);
+  if (Number.isNaN(current.getTime())) return null;
+
+  let daysToAdvance = Math.max(0, dayIndex - 1);
+  while (daysToAdvance > 0) {
+    current.setDate(current.getDate() + 1);
+    if (skipWeekends && (current.getDay() === 0 || current.getDay() === 6)) continue;
+    daysToAdvance -= 1;
+  }
+
+  if (skipWeekends) {
+    while (current.getDay() === 0 || current.getDay() === 6) {
+      current.setDate(current.getDate() + 1);
+    }
+  }
+
+  return current.toISOString().slice(0, 10);
+}
+
+function planSchedule(tasks, members, startDay = 1, options = {}) {
+  const { startDate = null, skipWeekends = false } = options;
   const working = members.map((m) => ({
     ...m,
     capacityHoursPerDay: Math.max(1, Number(m.capacityHoursPerDay) || 6),
@@ -58,19 +81,23 @@ function planSchedule(tasks, members, startDay = 1) {
   return tasks.map((task) => {
     const selected = chooseMemberForTask(task, working);
     if (!selected) {
+      const dayDate = mapDayIndexToDate(startDay, startDate, skipWeekends);
       return {
         ...task,
         dayIndex: startDay,
+        dayDate,
         assignedMemberId: null
       };
     }
 
     const dayIndex = estimateDayIndex(selected.totalAssignedHours, selected.capacityHoursPerDay, startDay);
+    const dayDate = mapDayIndexToDate(dayIndex, startDate, skipWeekends);
     selected.totalAssignedHours += task.estimateHours;
 
     return {
       ...task,
       dayIndex,
+      dayDate,
       assignedMemberId: selected.id
     };
   });
@@ -79,5 +106,6 @@ function planSchedule(tasks, members, startDay = 1) {
 module.exports = {
   inferSkill,
   splitRequirementToTasks,
-  planSchedule
+  planSchedule,
+  mapDayIndexToDate
 };

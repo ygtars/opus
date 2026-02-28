@@ -11,6 +11,44 @@ function asyncHandler(fn) {
   return (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 }
 
+async function getTask(db, taskId) {
+  return db.get('SELECT * FROM tasks WHERE id = ?', [taskId]);
+}
+
+async function dependencyWouldCreateCycle(db, taskId, blockedByTaskId) {
+  const rows = await db.all('SELECT task_id, blocked_by_task_id FROM task_dependencies');
+  const graph = new Map();
+
+  for (const row of rows) {
+    if (!graph.has(row.task_id)) graph.set(row.task_id, []);
+    graph.get(row.task_id).push(row.blocked_by_task_id);
+  }
+
+  if (!graph.has(taskId)) graph.set(taskId, []);
+  graph.get(taskId).push(blockedByTaskId);
+
+  const visited = new Set();
+  const inStack = new Set();
+
+  function dfs(node) {
+    if (inStack.has(node)) return true;
+    if (visited.has(node)) return false;
+
+    visited.add(node);
+    inStack.add(node);
+
+    const neighbors = graph.get(node) || [];
+    for (const next of neighbors) {
+      if (dfs(next)) return true;
+    }
+
+    inStack.delete(node);
+    return false;
+  }
+
+  return dfs(taskId);
+}
+
 async function createServer() {
   const db = await connectDb();
   await initSchema(db);
@@ -20,11 +58,28 @@ async function createServer() {
 
   app.get('/health', (_req, res) => res.json({ ok: true }));
 
-  app.post('/api/projects', asyncHandler(async (req, res) => {
-    const { name, description = '' } = req.body;
+  app.post('/api/organizations', asyncHandler(async (req, res) => {
+    const { name } = req.body;
     if (!name) return res.status(400).json({ error: 'name is required' });
 
-    const result = await db.run('INSERT INTO projects(name, description) VALUES (?, ?)', [name, description]);
+    await db.run('INSERT OR IGNORE INTO organizations(name) VALUES (?)', [name]);
+    const org = await db.get('SELECT * FROM organizations WHERE name = ?', [name]);
+    return res.status(201).json(org);
+  }));
+
+  app.get('/api/organizations', asyncHandler(async (_req, res) => {
+    const rows = await db.all('SELECT * FROM organizations ORDER BY id ASC');
+    return res.json(rows);
+  }));
+
+  app.post('/api/projects', asyncHandler(async (req, res) => {
+    const { organizationId = null, name, description = '' } = req.body;
+    if (!name) return res.status(400).json({ error: 'name is required' });
+
+    const result = await db.run(
+      'INSERT INTO projects(organization_id, name, description) VALUES (?, ?, ?)',
+      [organizationId, name, description]
+    );
     const project = await db.get('SELECT * FROM projects WHERE id = ?', [result.lastID]);
     return res.status(201).json(project);
   }));
@@ -68,12 +123,12 @@ async function createServer() {
   }));
 
   app.post('/api/members', asyncHandler(async (req, res) => {
-    const { fullName, role = 'developer', capacityHoursPerDay = 6 } = req.body;
+    const { organizationId = null, fullName, role = 'developer', capacityHoursPerDay = 6 } = req.body;
     if (!fullName) return res.status(400).json({ error: 'fullName is required' });
 
     const result = await db.run(
-      'INSERT INTO members(full_name, role, capacity_hours_per_day) VALUES (?, ?, ?)',
-      [fullName, role, capacityHoursPerDay]
+      'INSERT INTO members(organization_id, full_name, role, capacity_hours_per_day) VALUES (?, ?, ?, ?)',
+      [organizationId, fullName, role, capacityHoursPerDay]
     );
 
     const member = await db.get('SELECT * FROM members WHERE id = ?', [result.lastID]);
@@ -128,7 +183,7 @@ async function createServer() {
 
   app.patch('/api/tasks/:taskId', asyncHandler(async (req, res) => {
     const taskId = toInt(req.params.taskId);
-    const { status, assignedMemberId, estimateHours, dayIndex } = req.body;
+    const { status, assignedMemberId, estimateHours, dayIndex, dayDate } = req.body;
     if (taskId === null) return res.status(400).json({ error: 'invalid taskId' });
 
     await db.run(
@@ -136,9 +191,10 @@ async function createServer() {
        SET status = COALESCE(?, status),
            assigned_member_id = COALESCE(?, assigned_member_id),
            estimate_hours = COALESCE(?, estimate_hours),
-           day_index = COALESCE(?, day_index)
+           day_index = COALESCE(?, day_index),
+           day_date = COALESCE(?, day_date)
        WHERE id = ?`,
-      [status ?? null, assignedMemberId ?? null, estimateHours ?? null, dayIndex ?? null, taskId]
+      [status ?? null, assignedMemberId ?? null, estimateHours ?? null, dayIndex ?? null, dayDate ?? null, taskId]
     );
 
     const task = await db.get('SELECT * FROM tasks WHERE id = ?', [taskId]);
@@ -152,6 +208,22 @@ async function createServer() {
 
     if (taskId === null || blockedByTaskId === null) {
       return res.status(400).json({ error: 'taskId and blockedByTaskId must be integers' });
+    }
+
+    if (taskId === blockedByTaskId) {
+      return res.status(400).json({ error: 'task cannot depend on itself' });
+    }
+
+    const task = await getTask(db, taskId);
+    const blocker = await getTask(db, blockedByTaskId);
+    if (!task || !blocker) return res.status(404).json({ error: 'task or blockedBy task not found' });
+    if (task.project_id !== blocker.project_id) {
+      return res.status(400).json({ error: 'dependencies must be in same project' });
+    }
+
+    const createsCycle = await dependencyWouldCreateCycle(db, taskId, blockedByTaskId);
+    if (createsCycle) {
+      return res.status(400).json({ error: 'dependency would create a cycle' });
     }
 
     await db.run(
@@ -183,9 +255,47 @@ async function createServer() {
     return res.json(deps);
   }));
 
+  app.post('/api/projects/:projectId/ai-plan/preview', asyncHandler(async (req, res) => {
+    const projectId = toInt(req.params.projectId);
+    const { requirement, startDay = 1, startDate = null, skipWeekends = false } = req.body;
+    if (projectId === null) return res.status(400).json({ error: 'invalid projectId' });
+    if (!requirement) return res.status(400).json({ error: 'requirement is required' });
+
+    const members = await db.all(
+      `SELECT m.id, m.full_name, m.capacity_hours_per_day,
+              COALESCE(json_group_array(json_object('name', s.name, 'level', ms.level)), '[]') AS skillsJson
+       FROM members m
+       LEFT JOIN member_skills ms ON ms.member_id = m.id
+       LEFT JOIN skills s ON s.id = ms.skill_id
+       GROUP BY m.id
+       ORDER BY m.id`
+    );
+
+    const normalizedMembers = members.map((m) => ({
+      id: m.id,
+      fullName: m.full_name,
+      capacityHoursPerDay: m.capacity_hours_per_day,
+      skills: JSON.parse(m.skillsJson).filter((x) => x.name)
+    }));
+
+    const candidateTasks = splitRequirementToTasks(requirement);
+    const planned = planSchedule(candidateTasks, normalizedMembers, Number(startDay) || 1, {
+      startDate,
+      skipWeekends: Boolean(skipWeekends)
+    });
+
+    return res.json(planned);
+  }));
+
   app.post('/api/projects/:projectId/ai-plan', asyncHandler(async (req, res) => {
     const projectId = toInt(req.params.projectId);
-    const { requirement, clearExisting = false, startDay = 1 } = req.body;
+    const {
+      requirement,
+      clearExisting = false,
+      startDay = 1,
+      startDate = null,
+      skipWeekends = false
+    } = req.body;
 
     if (projectId === null) return res.status(400).json({ error: 'invalid projectId' });
     if (!requirement) return res.status(400).json({ error: 'requirement is required' });
@@ -212,12 +322,15 @@ async function createServer() {
     }));
 
     const candidateTasks = splitRequirementToTasks(requirement);
-    const planned = planSchedule(candidateTasks, normalizedMembers, Number(startDay) || 1);
+    const planned = planSchedule(candidateTasks, normalizedMembers, Number(startDay) || 1, {
+      startDate,
+      skipWeekends: Boolean(skipWeekends)
+    });
 
     for (const task of planned) {
       await db.run(
-        `INSERT INTO tasks(project_id, title, description, phase, required_skill, estimate_hours, day_index, assigned_member_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO tasks(project_id, title, description, phase, required_skill, estimate_hours, day_index, day_date, assigned_member_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           projectId,
           task.title,
@@ -226,6 +339,7 @@ async function createServer() {
           task.requiredSkill,
           task.estimateHours,
           task.dayIndex,
+          task.dayDate,
           task.assignedMemberId
         ]
       );
@@ -258,4 +372,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { createServer };
+module.exports = { createServer, dependencyWouldCreateCycle };
