@@ -38,26 +38,40 @@ function chooseMemberForTask(task, members) {
     member.skills.some((skill) => skill.name.toLowerCase() === task.requiredSkill.toLowerCase())
   );
 
-  if (bySkill.length) {
-    return bySkill.sort((a, b) => a.currentLoad - b.currentLoad)[0];
-  }
+  const pool = bySkill.length ? bySkill : members;
+  return [...pool].sort((a, b) => a.totalAssignedHours - b.totalAssignedHours)[0];
+}
 
-  return [...members].sort((a, b) => a.currentLoad - b.currentLoad)[0];
+function estimateDayIndex(totalAssignedHours, capacityHoursPerDay, startDay) {
+  const safeCapacity = Math.max(1, Number(capacityHoursPerDay) || 6);
+  const dayOffset = Math.floor(totalAssignedHours / safeCapacity);
+  return startDay + dayOffset;
 }
 
 function planSchedule(tasks, members, startDay = 1) {
-  const working = members.map((m) => ({ ...m, currentLoad: 0 }));
+  const working = members.map((m) => ({
+    ...m,
+    capacityHoursPerDay: Math.max(1, Number(m.capacityHoursPerDay) || 6),
+    totalAssignedHours: 0
+  }));
 
-  return tasks.map((task, idx) => {
+  return tasks.map((task) => {
     const selected = chooseMemberForTask(task, working);
-    if (selected) {
-      selected.currentLoad += task.estimateHours;
+    if (!selected) {
+      return {
+        ...task,
+        dayIndex: startDay,
+        assignedMemberId: null
+      };
     }
+
+    const dayIndex = estimateDayIndex(selected.totalAssignedHours, selected.capacityHoursPerDay, startDay);
+    selected.totalAssignedHours += task.estimateHours;
 
     return {
       ...task,
-      dayIndex: startDay + idx,
-      assignedMemberId: selected ? selected.id : null
+      dayIndex,
+      assignedMemberId: selected.id
     };
   });
 }

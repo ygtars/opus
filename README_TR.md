@@ -69,11 +69,14 @@ curl -X POST http://localhost:3000/api/projects/1/ai-plan \
 curl http://localhost:3000/api/projects/1/tasks
 ```
 
-## 4) Sistem nasıl karar veriyor?
+
+## 4) Planlama Mantığı (Kapasite bazlı)
 - Requirement metni küçük parçalara ayrılır.
 - Her parça için gerekli skill tahmini çıkarılır (`nodejs`, `react`, `sql`, `qa`).
-- Skill eşleşen üyeye görev atanır, eşleşme yoksa en az yüklü kişiye atanır.
-- Görevler gün bazlı (`day_index`) sıraya konur.
+- Skill eşleşen üyeye görev atanır, eşleşme yoksa en az toplam yükteki kişiye atanır.
+- Her üyenin `capacity_hours_per_day` bilgisi dikkate alınır ve `day_index` bu kapasiteye göre hesaplanır.
+
+Örnek: kapasite 8 saat/gün olan kişide 5 saatlik ilk görev ve 4 saatlik ikinci görev aynı güne düşebilir; biriken yük arttıkça sonraki görevler bir sonraki güne taşınır.
 
 ## 5) Sonraki iterasyon (hemen eklenebilir)
 1. JWT auth + organization yapısı

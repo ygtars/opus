@@ -20,8 +20,8 @@ test('planSchedule should assign by skill when possible', () => {
   ];
 
   const members = [
-    { id: 1, skills: [{ name: 'nodejs' }] },
-    { id: 2, skills: [{ name: 'react' }] }
+    { id: 1, capacityHoursPerDay: 6, skills: [{ name: 'nodejs' }] },
+    { id: 2, capacityHoursPerDay: 6, skills: [{ name: 'react' }] }
   ];
 
   const planned = planSchedule(tasks, members, 1);
@@ -29,5 +29,31 @@ test('planSchedule should assign by skill when possible', () => {
   assert.equal(planned[0].assignedMemberId, 1);
   assert.equal(planned[1].assignedMemberId, 2);
   assert.equal(planned[0].dayIndex, 1);
-  assert.equal(planned[1].dayIndex, 2);
+  assert.equal(planned[1].dayIndex, 1);
+});
+
+test('planSchedule should move member tasks to next day after capacity is exceeded', () => {
+  const tasks = [
+    { title: 'API-1', requiredSkill: 'nodejs', estimateHours: 5 },
+    { title: 'API-2', requiredSkill: 'nodejs', estimateHours: 4 }
+  ];
+
+  const members = [{ id: 1, capacityHoursPerDay: 8, skills: [{ name: 'nodejs' }] }];
+  const planned = planSchedule(tasks, members, 1);
+
+  assert.equal(planned[0].dayIndex, 1);
+  assert.equal(planned[1].dayIndex, 1);
+});
+
+test('planSchedule should continue scheduling on following day when backlog grows', () => {
+  const tasks = [
+    { title: 'API-1', requiredSkill: 'nodejs', estimateHours: 5 },
+    { title: 'API-2', requiredSkill: 'nodejs', estimateHours: 4 },
+    { title: 'API-3', requiredSkill: 'nodejs', estimateHours: 3 }
+  ];
+
+  const members = [{ id: 1, capacityHoursPerDay: 8, skills: [{ name: 'nodejs' }] }];
+  const planned = planSchedule(tasks, members, 1);
+
+  assert.equal(planned[2].dayIndex, 2);
 });

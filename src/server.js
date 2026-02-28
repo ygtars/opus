@@ -75,7 +75,7 @@ async function createServer() {
     if (!requirement) return res.status(400).json({ error: 'requirement is required' });
 
     const members = await db.all(
-      `SELECT m.id, m.full_name,
+      `SELECT m.id, m.full_name, m.capacity_hours_per_day,
               COALESCE(json_group_array(json_object('name', s.name, 'level', ms.level)), '[]') AS skillsJson
        FROM members m
        LEFT JOIN member_skills ms ON ms.member_id = m.id
@@ -87,6 +87,7 @@ async function createServer() {
     const normalizedMembers = members.map((m) => ({
       id: m.id,
       fullName: m.full_name,
+      capacityHoursPerDay: m.capacity_hours_per_day,
       skills: JSON.parse(m.skillsJson).filter((x) => x.name)
     }));
 
