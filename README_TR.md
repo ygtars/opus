@@ -16,11 +16,18 @@ Sunucu varsayılan olarak `http://localhost:3000` adresinde çalışır.
 - `GET /health`
 - `POST /api/projects`
 - `GET /api/projects`
+- `GET /api/projects/:projectId`
+- `PATCH /api/projects/:projectId`
+- `DELETE /api/projects/:projectId`
 - `POST /api/members`
+- `GET /api/members`
 - `POST /api/skills`
 - `POST /api/members/:memberId/skills`
 - `POST /api/projects/:projectId/ai-plan`
 - `GET /api/projects/:projectId/tasks`
+- `PATCH /api/tasks/:taskId`
+- `POST /api/tasks/:taskId/dependencies`
+- `GET /api/tasks/:taskId/dependencies`
 
 ## 3) Step-by-step Akış (Gerçek kullanım)
 
@@ -35,13 +42,13 @@ curl -X POST http://localhost:3000/api/projects \
 ```bash
 curl -X POST http://localhost:3000/api/members \
   -H 'Content-Type: application/json' \
-  -d '{"fullName":"Ahmet","role":"backend"}'
+  -d '{"fullName":"Ahmet","role":"backend","capacityHoursPerDay":7}'
 ```
 
 ```bash
 curl -X POST http://localhost:3000/api/members \
   -H 'Content-Type: application/json' \
-  -d '{"fullName":"Ayşe","role":"frontend"}'
+  -d '{"fullName":"Ayşe","role":"frontend","capacityHoursPerDay":6}'
 ```
 
 ### Step 3 — Skill tanımla
@@ -61,7 +68,7 @@ curl -X POST http://localhost:3000/api/members/2/skills \
 ```bash
 curl -X POST http://localhost:3000/api/projects/1/ai-plan \
   -H 'Content-Type: application/json' \
-  -d '{"requirement":"backend auth api, kullanıcı crud, frontend dashboard, test"}'
+  -d '{"requirement":"backend auth api, kullanıcı crud, frontend dashboard, test", "clearExisting": true, "startDay": 1}'
 ```
 
 ### Step 5 — Oluşan görevleri takvim sırasıyla çek
@@ -69,6 +76,18 @@ curl -X POST http://localhost:3000/api/projects/1/ai-plan \
 curl http://localhost:3000/api/projects/1/tasks
 ```
 
+### Step 6 — Task güncelle ve dependency tanımla
+```bash
+curl -X PATCH http://localhost:3000/api/tasks/1 \
+  -H 'Content-Type: application/json' \
+  -d '{"status":"in_progress","estimateHours":6}'
+```
+
+```bash
+curl -X POST http://localhost:3000/api/tasks/2/dependencies \
+  -H 'Content-Type: application/json' \
+  -d '{"blockedByTaskId":1}'
+```
 
 ## 4) Planlama Mantığı (Kapasite bazlı)
 - Requirement metni küçük parçalara ayrılır.
@@ -80,7 +99,7 @@ curl http://localhost:3000/api/projects/1/tasks
 
 ## 5) Sonraki iterasyon (hemen eklenebilir)
 1. JWT auth + organization yapısı
-2. Task dependency (blocked/by)
+2. Task dependency için cycle kontrolü
 3. Sprint kapasite limiti ve gerçek takvim (hafta sonu hariç)
 4. LLM entegrasyonu (JSON schema zorunlu çıktı)
 5. Frontend focus UI (timer + günlük plan)

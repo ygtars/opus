@@ -2,6 +2,15 @@ const express = require('express');
 const { connectDb, initSchema } = require('./db');
 const { splitRequirementToTasks, planSchedule } = require('./services/planner');
 
+function toInt(value) {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) ? parsed : null;
+}
+
+function asyncHandler(fn) {
+  return (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
+}
+
 async function createServer() {
   const db = await connectDb();
   await initSchema(db);
@@ -11,21 +20,54 @@ async function createServer() {
 
   app.get('/health', (_req, res) => res.json({ ok: true }));
 
-  app.post('/api/projects', async (req, res) => {
+  app.post('/api/projects', asyncHandler(async (req, res) => {
     const { name, description = '' } = req.body;
     if (!name) return res.status(400).json({ error: 'name is required' });
 
     const result = await db.run('INSERT INTO projects(name, description) VALUES (?, ?)', [name, description]);
     const project = await db.get('SELECT * FROM projects WHERE id = ?', [result.lastID]);
     return res.status(201).json(project);
-  });
+  }));
 
-  app.get('/api/projects', async (_req, res) => {
+  app.get('/api/projects', asyncHandler(async (_req, res) => {
     const rows = await db.all('SELECT * FROM projects ORDER BY id DESC');
     return res.json(rows);
-  });
+  }));
 
-  app.post('/api/members', async (req, res) => {
+  app.get('/api/projects/:projectId', asyncHandler(async (req, res) => {
+    const projectId = toInt(req.params.projectId);
+    if (projectId === null) return res.status(400).json({ error: 'invalid projectId' });
+
+    const project = await db.get('SELECT * FROM projects WHERE id = ?', [projectId]);
+    if (!project) return res.status(404).json({ error: 'project not found' });
+    return res.json(project);
+  }));
+
+  app.patch('/api/projects/:projectId', asyncHandler(async (req, res) => {
+    const projectId = toInt(req.params.projectId);
+    const { name, description } = req.body;
+    if (projectId === null) return res.status(400).json({ error: 'invalid projectId' });
+
+    await db.run(
+      'UPDATE projects SET name = COALESCE(?, name), description = COALESCE(?, description) WHERE id = ?',
+      [name ?? null, description ?? null, projectId]
+    );
+
+    const project = await db.get('SELECT * FROM projects WHERE id = ?', [projectId]);
+    if (!project) return res.status(404).json({ error: 'project not found' });
+    return res.json(project);
+  }));
+
+  app.delete('/api/projects/:projectId', asyncHandler(async (req, res) => {
+    const projectId = toInt(req.params.projectId);
+    if (projectId === null) return res.status(400).json({ error: 'invalid projectId' });
+
+    const result = await db.run('DELETE FROM projects WHERE id = ?', [projectId]);
+    if (!result.changes) return res.status(404).json({ error: 'project not found' });
+    return res.status(204).send();
+  }));
+
+  app.post('/api/members', asyncHandler(async (req, res) => {
     const { fullName, role = 'developer', capacityHoursPerDay = 6 } = req.body;
     if (!fullName) return res.status(400).json({ error: 'fullName is required' });
 
@@ -36,20 +78,26 @@ async function createServer() {
 
     const member = await db.get('SELECT * FROM members WHERE id = ?', [result.lastID]);
     return res.status(201).json(member);
-  });
+  }));
 
-  app.post('/api/skills', async (req, res) => {
+  app.get('/api/members', asyncHandler(async (_req, res) => {
+    const rows = await db.all('SELECT * FROM members ORDER BY id ASC');
+    return res.json(rows);
+  }));
+
+  app.post('/api/skills', asyncHandler(async (req, res) => {
     const { name } = req.body;
     if (!name) return res.status(400).json({ error: 'name is required' });
     await db.run('INSERT OR IGNORE INTO skills(name) VALUES (?)', [name.toLowerCase()]);
     const skill = await db.get('SELECT * FROM skills WHERE name = ?', [name.toLowerCase()]);
     return res.status(201).json(skill);
-  });
+  }));
 
-  app.post('/api/members/:memberId/skills', async (req, res) => {
-    const memberId = Number(req.params.memberId);
+  app.post('/api/members/:memberId/skills', asyncHandler(async (req, res) => {
+    const memberId = toInt(req.params.memberId);
     const { skillName, level = 'mid' } = req.body;
 
+    if (memberId === null) return res.status(400).json({ error: 'invalid memberId' });
     if (!skillName) return res.status(400).json({ error: 'skillName is required' });
 
     await db.run('INSERT OR IGNORE INTO skills(name) VALUES (?)', [skillName.toLowerCase()]);
@@ -61,18 +109,90 @@ async function createServer() {
     );
 
     return res.status(201).json({ memberId, skill: skill.name, level });
-  });
+  }));
 
-  app.get('/api/projects/:projectId/tasks', async (req, res) => {
-    const projectId = Number(req.params.projectId);
-    const rows = await db.all('SELECT * FROM tasks WHERE project_id = ? ORDER BY day_index, id', [projectId]);
+  app.get('/api/projects/:projectId/tasks', asyncHandler(async (req, res) => {
+    const projectId = toInt(req.params.projectId);
+    if (projectId === null) return res.status(400).json({ error: 'invalid projectId' });
+
+    const rows = await db.all(
+      `SELECT t.*, m.full_name AS assigned_member_name
+       FROM tasks t
+       LEFT JOIN members m ON m.id = t.assigned_member_id
+       WHERE t.project_id = ?
+       ORDER BY t.day_index, t.id`,
+      [projectId]
+    );
     return res.json(rows);
-  });
+  }));
 
-  app.post('/api/projects/:projectId/ai-plan', async (req, res) => {
-    const projectId = Number(req.params.projectId);
-    const { requirement } = req.body;
+  app.patch('/api/tasks/:taskId', asyncHandler(async (req, res) => {
+    const taskId = toInt(req.params.taskId);
+    const { status, assignedMemberId, estimateHours, dayIndex } = req.body;
+    if (taskId === null) return res.status(400).json({ error: 'invalid taskId' });
+
+    await db.run(
+      `UPDATE tasks
+       SET status = COALESCE(?, status),
+           assigned_member_id = COALESCE(?, assigned_member_id),
+           estimate_hours = COALESCE(?, estimate_hours),
+           day_index = COALESCE(?, day_index)
+       WHERE id = ?`,
+      [status ?? null, assignedMemberId ?? null, estimateHours ?? null, dayIndex ?? null, taskId]
+    );
+
+    const task = await db.get('SELECT * FROM tasks WHERE id = ?', [taskId]);
+    if (!task) return res.status(404).json({ error: 'task not found' });
+    return res.json(task);
+  }));
+
+  app.post('/api/tasks/:taskId/dependencies', asyncHandler(async (req, res) => {
+    const taskId = toInt(req.params.taskId);
+    const blockedByTaskId = toInt(req.body.blockedByTaskId);
+
+    if (taskId === null || blockedByTaskId === null) {
+      return res.status(400).json({ error: 'taskId and blockedByTaskId must be integers' });
+    }
+
+    await db.run(
+      'INSERT OR IGNORE INTO task_dependencies(task_id, blocked_by_task_id) VALUES (?, ?)',
+      [taskId, blockedByTaskId]
+    );
+
+    const deps = await db.all(
+      'SELECT task_id, blocked_by_task_id FROM task_dependencies WHERE task_id = ? ORDER BY blocked_by_task_id',
+      [taskId]
+    );
+
+    return res.status(201).json(deps);
+  }));
+
+  app.get('/api/tasks/:taskId/dependencies', asyncHandler(async (req, res) => {
+    const taskId = toInt(req.params.taskId);
+    if (taskId === null) return res.status(400).json({ error: 'invalid taskId' });
+
+    const deps = await db.all(
+      `SELECT td.task_id, td.blocked_by_task_id, t.title AS blocked_by_title
+       FROM task_dependencies td
+       JOIN tasks t ON t.id = td.blocked_by_task_id
+       WHERE td.task_id = ?
+       ORDER BY td.blocked_by_task_id`,
+      [taskId]
+    );
+
+    return res.json(deps);
+  }));
+
+  app.post('/api/projects/:projectId/ai-plan', asyncHandler(async (req, res) => {
+    const projectId = toInt(req.params.projectId);
+    const { requirement, clearExisting = false, startDay = 1 } = req.body;
+
+    if (projectId === null) return res.status(400).json({ error: 'invalid projectId' });
     if (!requirement) return res.status(400).json({ error: 'requirement is required' });
+
+    if (clearExisting) {
+      await db.run('DELETE FROM tasks WHERE project_id = ?', [projectId]);
+    }
 
     const members = await db.all(
       `SELECT m.id, m.full_name, m.capacity_hours_per_day,
@@ -92,7 +212,7 @@ async function createServer() {
     }));
 
     const candidateTasks = splitRequirementToTasks(requirement);
-    const planned = planSchedule(candidateTasks, normalizedMembers);
+    const planned = planSchedule(candidateTasks, normalizedMembers, Number(startDay) || 1);
 
     for (const task of planned) {
       await db.run(
@@ -113,6 +233,10 @@ async function createServer() {
 
     const saved = await db.all('SELECT * FROM tasks WHERE project_id = ? ORDER BY day_index, id', [projectId]);
     return res.status(201).json(saved);
+  }));
+
+  app.use((err, _req, res, _next) => {
+    res.status(500).json({ error: 'internal error', detail: err.message });
   });
 
   return app;

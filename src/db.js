@@ -55,8 +55,17 @@ async function initSchema(db) {
       day_index INTEGER,
       status TEXT DEFAULT 'todo',
       assigned_member_id INTEGER,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
       FOREIGN KEY (assigned_member_id) REFERENCES members(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS task_dependencies (
+      task_id INTEGER NOT NULL,
+      blocked_by_task_id INTEGER NOT NULL,
+      PRIMARY KEY (task_id, blocked_by_task_id),
+      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+      FOREIGN KEY (blocked_by_task_id) REFERENCES tasks(id) ON DELETE CASCADE
     );
   `);
 }
