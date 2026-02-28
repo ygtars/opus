@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI Task Manager Focus UI</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <h1>AI Task Manager</h1>
+      <div id="healthBadge" class="badge">Sunucu kontrol ediliyor…</div>
+    </header>
+
+    <main class="layout">
+      <section class="panel">
+        <h2>Proje & Plan</h2>
+        <label>Organization
+          <input id="orgName" placeholder="Acme" />
+        </label>
+        <button id="createOrgBtn">Organization Oluştur</button>
+        <label>Aktif Organization ID
+          <input id="activeOrgId" type="number" value="1" min="1" />
+        </label>
+
+        <label>Proje adı
+          <input id="projectName" placeholder="E-Ticaret Admin" />
+        </label>
+        <label>Açıklama
+          <input id="projectDesc" placeholder="MVP" />
+        </label>
+        <button id="createProjectBtn">Proje Oluştur</button>
+        <label>Aktif Project ID
+          <input id="activeProjectId" type="number" value="1" min="1" />
+        </label>
+
+        <label>Requirement
+          <textarea id="requirement" rows="4" placeholder="backend auth api, kullanıcı crud, frontend dashboard"></textarea>
+        </label>
+
+        <div class="row">
+          <label>Başlangıç Tarihi
+            <input id="startDate" type="date" />
+          </label>
+          <label>Start Day
+            <input id="startDay" type="number" value="1" min="1" />
+          </label>
+        </div>
+
+        <label class="checkbox-row"><input id="skipWeekends" type="checkbox" checked />Hafta sonunu atla</label>
+        <div class="actions">
+          <button id="previewBtn">Plan Önizleme</button>
+          <button id="savePlanBtn">Planı Kaydet</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Takım</h2>
+        <label>Ad Soyad
+          <input id="memberName" placeholder="Ahmet" />
+        </label>
+        <label>Rol
+          <input id="memberRole" placeholder="backend" />
+        </label>
+        <label>Kapasite (saat/gün)
+          <input id="memberCapacity" type="number" value="6" min="1" />
+        </label>
+        <button id="addMemberBtn">Üye Ekle</button>
+
+        <label>Skill adı
+          <input id="skillName" placeholder="nodejs" />
+        </label>
+        <label>Member ID
+          <input id="skillMemberId" type="number" value="1" min="1" />
+        </label>
+        <button id="addSkillBtn">Skill Ata</button>
+
+        <ul id="memberList" class="list"></ul>
+      </section>
+
+      <section class="panel focus">
+        <h2>Focus & Timeline</h2>
+        <div id="timer" class="timer">00:00:00</div>
+        <div class="actions">
+          <button id="startTimerBtn">Başlat</button>
+          <button id="stopTimerBtn">Durdur</button>
+          <button id="resetTimerBtn">Sıfırla</button>
+        </div>
+
+        <h3>Plan Çıktısı</h3>
+        <div id="planOutput" class="code"></div>
+
+        <h3>Task Listesi</h3>
+        <ul id="taskList" class="list"></ul>
+      </section>
+    </main>
+
+    <footer class="footer">Node.js + SQLite MVP Focus UI</footer>
+    <script src="/app.js"></script>
+  </body>
+</html>

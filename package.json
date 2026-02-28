@@ -1,0 +1,16 @@
+{
+  "name": "ai-task-manager",
+  "version": "0.1.0",
+  "description": "AI-supported task manager MVP backend with Node.js + SQLite",
+  "main": "src/server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "sqlite": "^5.1.1",
+    "sqlite3": "^5.1.7"
+  }
+}
