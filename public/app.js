@@ -1,4 +1,5 @@
 const state = {
+  activeOrgId: 1,
   activeProjectId: 1,
   timerSeconds: 0,
   timerRef: null
@@ -62,23 +63,26 @@ async function boot() {
 
   $('createOrgBtn').onclick = async () => {
     const org = await api('/api/organizations', 'POST', { name: $('orgName').value });
+    state.activeOrgId = org.id;
+    $('activeOrgId').value = String(org.id);
     $('planOutput').textContent = `Organization oluşturuldu: #${org.id}`;
   };
 
   $('createProjectBtn').onclick = async () => {
     const project = await api('/api/projects', 'POST', {
-      organizationId: 1,
+      organizationId: state.activeOrgId,
       name: $('projectName').value,
       description: $('projectDesc').value
     });
     state.activeProjectId = project.id;
+    $('activeProjectId').value = String(project.id);
     $('planOutput').textContent = `Aktif proje #${project.id}: ${project.name}`;
     await refreshTasks();
   };
 
   $('addMemberBtn').onclick = async () => {
     await api('/api/members', 'POST', {
-      organizationId: 1,
+      organizationId: state.activeOrgId,
       fullName: $('memberName').value,
       role: $('memberRole').value,
       capacityHoursPerDay: Number($('memberCapacity').value || 6)
@@ -92,6 +96,15 @@ async function boot() {
       level: 'mid'
     });
     $('planOutput').textContent = 'Skill atandı';
+  };
+
+  $('activeOrgId').onchange = () => {
+    state.activeOrgId = Number($('activeOrgId').value || 1);
+  };
+
+  $('activeProjectId').onchange = () => {
+    state.activeProjectId = Number($('activeProjectId').value || 1);
+    refreshTasks().catch(() => {});
   };
 
   $('previewBtn').onclick = async () => {
@@ -122,6 +135,9 @@ async function boot() {
     state.timerSeconds = 0;
     renderTimer();
   };
+
+  state.activeOrgId = Number($('activeOrgId').value || 1);
+  state.activeProjectId = Number($('activeProjectId').value || 1);
 
   renderTimer();
   await refreshMembers().catch(() => {});

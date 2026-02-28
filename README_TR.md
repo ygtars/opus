@@ -1,8 +1,21 @@
 # Node.js + SQLite ile AI Task Manager MVP (Adım Adım)
 
+## 0) Tek Komut Docker Run (önerilen)
+
+```bash
+./scripts/run-docker.sh
+```
+
+Ardından tarayıcıdan: `http://localhost:3000`
+
+Durdurmak için:
+```bash
+docker compose down
+```
+
 Bu doküman, önceki ürün planını **çalışan bir backend MVP**'ye dönüştürmek için adım adım uygulanacak yolu anlatır.
 
-## 1) Kurulum
+## 1) Local Kurulum (Docker olmadan)
 
 ```bash
 npm install
@@ -14,6 +27,7 @@ Sunucu varsayılan olarak `http://localhost:3000` adresinde çalışır.
 Tarayıcıdan `http://localhost:3000` açıldığında Focus UI ekranı gelir.
 
 ## 2) UI (Focus)
+- UI'da artık aktif Organization ID / Project ID manuel değiştirilebilir; hardcoded kullanım yok.
 - Sol panel: Organization/proje/plan üretimi
 - Orta panel: takım ve skill yönetimi
 - Sağ panel: timer + plan çıktısı + task timeline
