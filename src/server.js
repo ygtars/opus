@@ -1,6 +1,7 @@
 const express = require('express');
 const { connectDb, initSchema } = require('./db');
 const { splitRequirementToTasks, planSchedule } = require('./services/planner');
+const { analyzeTaskGraph } = require('./services/criticalPath');
 
 function toInt(value) {
   const parsed = Number(value);
@@ -47,6 +48,26 @@ async function dependencyWouldCreateCycle(db, taskId, blockedByTaskId) {
   }
 
   return dfs(taskId);
+}
+
+
+async function loadMembersWithSkills(db) {
+  const members = await db.all(
+    `SELECT m.id, m.full_name, m.capacity_hours_per_day,
+            COALESCE(json_group_array(json_object('name', s.name, 'level', ms.level)), '[]') AS skillsJson
+     FROM members m
+     LEFT JOIN member_skills ms ON ms.member_id = m.id
+     LEFT JOIN skills s ON s.id = ms.skill_id
+     GROUP BY m.id
+     ORDER BY m.id`
+  );
+
+  return members.map((m) => ({
+    id: m.id,
+    fullName: m.full_name,
+    capacityHoursPerDay: m.capacity_hours_per_day,
+    skills: JSON.parse(m.skillsJson).filter((x) => x.name)
+  }));
 }
 
 async function createServer() {
@@ -261,22 +282,7 @@ async function createServer() {
     if (projectId === null) return res.status(400).json({ error: 'invalid projectId' });
     if (!requirement) return res.status(400).json({ error: 'requirement is required' });
 
-    const members = await db.all(
-      `SELECT m.id, m.full_name, m.capacity_hours_per_day,
-              COALESCE(json_group_array(json_object('name', s.name, 'level', ms.level)), '[]') AS skillsJson
-       FROM members m
-       LEFT JOIN member_skills ms ON ms.member_id = m.id
-       LEFT JOIN skills s ON s.id = ms.skill_id
-       GROUP BY m.id
-       ORDER BY m.id`
-    );
-
-    const normalizedMembers = members.map((m) => ({
-      id: m.id,
-      fullName: m.full_name,
-      capacityHoursPerDay: m.capacity_hours_per_day,
-      skills: JSON.parse(m.skillsJson).filter((x) => x.name)
-    }));
+    const normalizedMembers = await loadMembersWithSkills(db);
 
     const candidateTasks = splitRequirementToTasks(requirement);
     const planned = planSchedule(candidateTasks, normalizedMembers, Number(startDay) || 1, {
@@ -304,22 +310,7 @@ async function createServer() {
       await db.run('DELETE FROM tasks WHERE project_id = ?', [projectId]);
     }
 
-    const members = await db.all(
-      `SELECT m.id, m.full_name, m.capacity_hours_per_day,
-              COALESCE(json_group_array(json_object('name', s.name, 'level', ms.level)), '[]') AS skillsJson
-       FROM members m
-       LEFT JOIN member_skills ms ON ms.member_id = m.id
-       LEFT JOIN skills s ON s.id = ms.skill_id
-       GROUP BY m.id
-       ORDER BY m.id`
-    );
-
-    const normalizedMembers = members.map((m) => ({
-      id: m.id,
-      fullName: m.full_name,
-      capacityHoursPerDay: m.capacity_hours_per_day,
-      skills: JSON.parse(m.skillsJson).filter((x) => x.name)
-    }));
+    const normalizedMembers = await loadMembersWithSkills(db);
 
     const candidateTasks = splitRequirementToTasks(requirement);
     const planned = planSchedule(candidateTasks, normalizedMembers, Number(startDay) || 1, {
@@ -347,6 +338,80 @@ async function createServer() {
 
     const saved = await db.all('SELECT * FROM tasks WHERE project_id = ? ORDER BY day_index, id', [projectId]);
     return res.status(201).json(saved);
+  }));
+
+
+  app.get('/api/projects/:projectId/critical-path', asyncHandler(async (req, res) => {
+    const projectId = toInt(req.params.projectId);
+    if (projectId === null) return res.status(400).json({ error: 'invalid projectId' });
+
+    const tasks = await db.all('SELECT * FROM tasks WHERE project_id = ? ORDER BY id', [projectId]);
+    const deps = await db.all(
+      `SELECT td.task_id, td.blocked_by_task_id
+       FROM task_dependencies td
+       JOIN tasks t ON t.id = td.task_id
+       WHERE t.project_id = ?`,
+      [projectId]
+    );
+
+    const analysis = analyzeTaskGraph(tasks, deps);
+    if (analysis.hasCycle) {
+      return res.status(400).json({ error: 'project dependency graph has cycle' });
+    }
+
+    const criticalTasks = analysis.criticalPathTaskIds.map((id) => tasks.find((t) => t.id === id));
+    return res.json({
+      projectId,
+      topologicalOrder: analysis.topologicalOrder,
+      criticalPathTaskIds: analysis.criticalPathTaskIds,
+      criticalPathTotalHours: analysis.criticalPathTotalHours,
+      criticalTasks
+    });
+  }));
+
+  app.post('/api/projects/:projectId/replan', asyncHandler(async (req, res) => {
+    const projectId = toInt(req.params.projectId);
+    const {
+      startDay = 1,
+      startDate = null,
+      skipWeekends = false,
+      statuses = ['todo', 'in_progress']
+    } = req.body;
+
+    if (projectId === null) return res.status(400).json({ error: 'invalid projectId' });
+
+    const list = Array.isArray(statuses) && statuses.length ? statuses : ['todo', 'in_progress'];
+    const placeholders = list.map(() => '?').join(',');
+    const taskRows = await db.all(
+      `SELECT * FROM tasks WHERE project_id = ? AND status IN (${placeholders}) ORDER BY id`,
+      [projectId, ...list]
+    );
+
+    const normalizedMembers = await loadMembersWithSkills(db);
+    const planningInput = taskRows.map((task) => ({
+      title: task.title,
+      description: task.description,
+      phase: task.phase,
+      requiredSkill: task.required_skill || 'nodejs',
+      estimateHours: task.estimate_hours
+    }));
+
+    const planned = planSchedule(planningInput, normalizedMembers, Number(startDay) || 1, {
+      startDate,
+      skipWeekends: Boolean(skipWeekends)
+    });
+
+    for (let i = 0; i < planned.length; i += 1) {
+      const targetTask = taskRows[i];
+      const ptask = planned[i];
+      await db.run(
+        `UPDATE tasks SET day_index = ?, day_date = ?, assigned_member_id = ? WHERE id = ?`,
+        [ptask.dayIndex, ptask.dayDate, ptask.assignedMemberId, targetTask.id]
+      );
+    }
+
+    const saved = await db.all('SELECT * FROM tasks WHERE project_id = ? ORDER BY day_index, id', [projectId]);
+    return res.json(saved);
   }));
 
   app.use((err, _req, res, _next) => {

@@ -31,6 +31,8 @@ Sunucu varsayılan olarak `http://localhost:3000` adresinde çalışır.
 - `PATCH /api/tasks/:taskId`
 - `POST /api/tasks/:taskId/dependencies`
 - `GET /api/tasks/:taskId/dependencies`
+- `GET /api/projects/:projectId/critical-path`
+- `POST /api/projects/:projectId/replan`
 
 ## 3) Iteration-1 Akış (temel)
 
@@ -113,21 +115,38 @@ Eğer `1` zaten dolaylı olarak `2`'ye bağlıysa API hata döner:
 { "error": "dependency would create a cycle" }
 ```
 
-## 5) Planlama Mantığı (Kapasite + hafta sonu hariç)
+
+## 5) Iteration-3 Akış (final)
+
+### Step 9 — Kritik yolu (critical path) gör
+```bash
+curl http://localhost:3000/api/projects/1/critical-path
+```
+
+### Step 10 — Duruma göre planı yeniden optimize et
+```bash
+curl -X POST http://localhost:3000/api/projects/1/replan \
+  -H 'Content-Type: application/json' \
+  -d '{"startDay":2,"startDate":"2026-03-10","skipWeekends":true,"statuses":["todo","in_progress"]}'
+```
+
+Bu endpoint yalnızca belirtilen statüdeki taskları yeniden günlere dağıtır.
+
+## 6) Planlama Mantığı (Kapasite + hafta sonu hariç)
 - Requirement metni küçük parçalara ayrılır.
 - Her parça için gerekli skill tahmini çıkarılır (`nodejs`, `react`, `sql`, `qa`).
 - Skill eşleşen üyeye görev atanır, eşleşme yoksa en az toplam yükteki kişiye atanır.
 - Her üyenin `capacity_hours_per_day` bilgisi dikkate alınır.
 - `skipWeekends=true` ise `day_date` Cumartesi/Pazar'a düşmez.
 
-## 6) Sonraki iterasyon (hemen eklenebilir)
+## 7) Teslim sonrası opsiyonel geliştirmeler
 1. Basit JWT auth (organization scoped)
 2. Dependency için kritik yol (critical path) hesaplama
 3. Story point / velocity bazlı tahmin düzeltme
 4. LLM entegrasyonu (JSON schema zorunlu çıktı)
 5. Frontend focus UI (timer + günlük plan)
 
-## 7) Test
+## 8) Test
 ```bash
 npm test
 ```
