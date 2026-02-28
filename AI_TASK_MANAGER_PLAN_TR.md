@@ -180,3 +180,10 @@ Hemen başlanacak backlog:
 5. Focus mode timer + task progress
 
 Bu 5 adım tamamlandığında çalışır bir MVP demosu çıkmış olur.
+
+## 11) Bu Repo İçin Uygulanan Teknoloji Kararı
+Bu çalışma kapsamında başlangıç implementasyonu için:
+- Backend: **Node.js (Express)**
+- Veritabanı: **SQLite**
+
+seçilmiştir. Böylece hızlı prototipleme, düşük operasyon maliyeti ve tek dosya veritabanı ile MVP doğrulaması hedeflenir.
