@@ -11,7 +11,14 @@ npm start
 
 Sunucu varsayılan olarak `http://localhost:3000` adresinde çalışır.
 
-## 2) MVP'de Hazır Endpoint'ler
+Tarayıcıdan `http://localhost:3000` açıldığında Focus UI ekranı gelir.
+
+## 2) UI (Focus)
+- Sol panel: Organization/proje/plan üretimi
+- Orta panel: takım ve skill yönetimi
+- Sağ panel: timer + plan çıktısı + task timeline
+
+## 3) MVP'de Hazır Endpoint'ler
 
 - `GET /health`
 - `POST /api/organizations`
@@ -34,7 +41,7 @@ Sunucu varsayılan olarak `http://localhost:3000` adresinde çalışır.
 - `GET /api/projects/:projectId/critical-path`
 - `POST /api/projects/:projectId/replan`
 
-## 3) Iteration-1 Akış (temel)
+## 4) Iteration-1 Akış (temel)
 
 ### Step 1 — Organization + proje aç
 ```bash
@@ -94,7 +101,7 @@ curl -X POST http://localhost:3000/api/projects/1/ai-plan \
 curl http://localhost:3000/api/projects/1/tasks
 ```
 
-## 4) Iteration-2 Akış (yeni)
+## 5) Iteration-2 Akış (yeni)
 
 ### Step 7 — Task güncelle
 ```bash
@@ -116,7 +123,7 @@ Eğer `1` zaten dolaylı olarak `2`'ye bağlıysa API hata döner:
 ```
 
 
-## 5) Iteration-3 Akış (final)
+## 6) Iteration-3 Akış (final)
 
 ### Step 9 — Kritik yolu (critical path) gör
 ```bash
@@ -132,21 +139,21 @@ curl -X POST http://localhost:3000/api/projects/1/replan \
 
 Bu endpoint yalnızca belirtilen statüdeki taskları yeniden günlere dağıtır.
 
-## 6) Planlama Mantığı (Kapasite + hafta sonu hariç)
+## 7) Planlama Mantığı (Kapasite + hafta sonu hariç)
 - Requirement metni küçük parçalara ayrılır.
 - Her parça için gerekli skill tahmini çıkarılır (`nodejs`, `react`, `sql`, `qa`).
 - Skill eşleşen üyeye görev atanır, eşleşme yoksa en az toplam yükteki kişiye atanır.
 - Her üyenin `capacity_hours_per_day` bilgisi dikkate alınır.
 - `skipWeekends=true` ise `day_date` Cumartesi/Pazar'a düşmez.
 
-## 7) Teslim sonrası opsiyonel geliştirmeler
+## 8) Teslim sonrası opsiyonel geliştirmeler
 1. Basit JWT auth (organization scoped)
 2. Dependency için kritik yol (critical path) hesaplama
 3. Story point / velocity bazlı tahmin düzeltme
 4. LLM entegrasyonu (JSON schema zorunlu çıktı)
 5. Frontend focus UI (timer + günlük plan)
 
-## 8) Test
+## 9) Test
 ```bash
 npm test
 ```
